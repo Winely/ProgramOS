@@ -13,7 +13,7 @@ The program of operating system.
 + bochs配置文件`bochsrc`中的`romimage`,`vgaromimage`和`keymap`的路径可能需要根据机器进行修改
 + 确定bochs无误后运行脚本即可（可能需要输入密码）
 ```bash
-  $ . plus1s
+  $ . +1s
 ```
   然后输入回车和c即可。  
 

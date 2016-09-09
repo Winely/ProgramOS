@@ -9,6 +9,7 @@
  *****************************************************************************/
 
 #include "type.h"
+#include "stdio.h"
 #include "const.h"
 #include "protect.h"
 #include "string.h"
@@ -23,10 +24,13 @@
 
 PRIVATE void	init_hd			();
 PRIVATE void	hd_open			(int device);
+PRIVATE void	hd_close		(int device);
+PRIVATE void	hd_rdwt			(MESSAGE * p);
+PRIVATE void	hd_ioctl		(MESSAGE * p);
 PRIVATE void	hd_cmd_out		(struct hd_cmd* cmd);
 PRIVATE void	get_part_table		(int drive, int sect_nr, struct part_ent * entry);
 PRIVATE void	partition		(int device, int style);
-PRIVATE void	print_hdinfo		(struct hd_info * hdi);
+/* PRIVATE void	print_hdinfo		(struct hd_info * hdi); */
 PRIVATE int	waitfor			(int mask, int val, int timeout);
 PRIVATE void	interrupt_wait		();
 PRIVATE	void	hd_identify		(int drive);
@@ -63,6 +67,19 @@ PUBLIC void task_hd()
 			hd_open(msg.DEVICE);
 			break;
 
+		case DEV_CLOSE:
+			hd_close(msg.DEVICE);
+			break;
+
+		case DEV_READ:
+		case DEV_WRITE:
+			hd_rdwt(&msg);
+			break;
+
+		case DEV_IOCTL:
+			hd_ioctl(&msg);
+			break;
+
 		default:
 			dump_msg("HD driver::unknown msg", &msg);
 			spin("FS::main_loop (invalid msg.type)");
@@ -83,9 +100,10 @@ PUBLIC void task_hd()
 PRIVATE void init_hd()
 {
 	int i;
+
 	/* Get the number of drives from the BIOS data area */
 	u8 * pNrDrives = (u8*)(0x475);
-	printl("NrDrives:%d.\n", *pNrDrives);
+	printl("{HD} NrDrives:%d.\n", *pNrDrives);
 	assert(*pNrDrives);
 
 	put_irq_handler(AT_WINI_IRQ, hd_handler);
@@ -116,7 +134,113 @@ PRIVATE void hd_open(int device)
 
 	if (hd_info[drive].open_cnt++ == 0) {
 		partition(drive * (NR_PART_PER_DRIVE + 1), P_PRIMARY);
-		print_hdinfo(&hd_info[drive]);
+		/* print_hdinfo(&hd_info[drive]); */
+	}
+}
+
+/*****************************************************************************
+ *                                hd_close
+ *****************************************************************************/
+/**
+ * <Ring 1> This routine handles DEV_CLOSE message. 
+ * 
+ * @param device The device to be opened.
+ *****************************************************************************/
+PRIVATE void hd_close(int device)
+{
+	int drive = DRV_OF_DEV(device);
+	assert(drive == 0);	/* only one drive */
+
+	hd_info[drive].open_cnt--;
+}
+
+
+/*****************************************************************************
+ *                                hd_rdwt
+ *****************************************************************************/
+/**
+ * <Ring 1> This routine handles DEV_READ and DEV_WRITE message.
+ * 
+ * @param p Message ptr.
+ *****************************************************************************/
+PRIVATE void hd_rdwt(MESSAGE * p)
+{
+	int drive = DRV_OF_DEV(p->DEVICE);
+
+	u64 pos = p->POSITION;
+	assert((pos >> SECTOR_SIZE_SHIFT) < (1 << 31));
+
+	/**
+	 * We only allow to R/W from a SECTOR boundary:
+	 */
+	assert((pos & 0x1FF) == 0);
+
+	u32 sect_nr = (u32)(pos >> SECTOR_SIZE_SHIFT); /* pos / SECTOR_SIZE */
+	int logidx = (p->DEVICE - MINOR_hd1a) % NR_SUB_PER_DRIVE;
+	sect_nr += p->DEVICE < MAX_PRIM ?
+		hd_info[drive].primary[p->DEVICE].base :
+		hd_info[drive].logical[logidx].base;
+
+	struct hd_cmd cmd;
+	cmd.features	= 0;
+	cmd.count	= (p->CNT + SECTOR_SIZE - 1) / SECTOR_SIZE;
+	cmd.lba_low	= sect_nr & 0xFF;
+	cmd.lba_mid	= (sect_nr >>  8) & 0xFF;
+	cmd.lba_high	= (sect_nr >> 16) & 0xFF;
+	cmd.device	= MAKE_DEVICE_REG(1, drive, (sect_nr >> 24) & 0xF);
+	cmd.command	= (p->type == DEV_READ) ? ATA_READ : ATA_WRITE;
+	hd_cmd_out(&cmd);
+
+	int bytes_left = p->CNT;
+	void * la = (void*)va2la(p->PROC_NR, p->BUF);
+
+	while (bytes_left) {
+		int bytes = min(SECTOR_SIZE, bytes_left);
+		if (p->type == DEV_READ) {
+			interrupt_wait();
+			port_read(REG_DATA, hdbuf, SECTOR_SIZE);
+			phys_copy(la, (void*)va2la(TASK_HD, hdbuf), bytes);
+		}
+		else {
+			if (!waitfor(STATUS_DRQ, STATUS_DRQ, HD_TIMEOUT))
+				panic("hd writing error.");
+
+			port_write(REG_DATA, la, bytes);
+			interrupt_wait();
+		}
+		bytes_left -= SECTOR_SIZE;
+		la += SECTOR_SIZE;
+	}
+}															
+
+
+/*****************************************************************************
+ *                                hd_ioctl
+ *****************************************************************************/
+/**
+ * <Ring 1> This routine handles the DEV_IOCTL message.
+ * 
+ * @param p  Ptr to the MESSAGE.
+ *****************************************************************************/
+PRIVATE void hd_ioctl(MESSAGE * p)
+{
+	int device = p->DEVICE;
+	int drive = DRV_OF_DEV(device);
+
+	struct hd_info * hdi = &hd_info[drive];
+
+	if (p->REQUEST == DIOCTL_GET_GEO) {
+		void * dst = va2la(p->PROC_NR, p->BUF);
+		void * src = va2la(TASK_HD,
+				   device < MAX_PRIM ?
+				   &hdi->primary[device] :
+				   &hdi->logical[(device - MINOR_hd1a) %
+						NR_SUB_PER_DRIVE]);
+
+		phys_copy(dst, src, sizeof(struct part_info));
+	}
+	else {
+		assert(0);
 	}
 }
 
@@ -214,38 +338,38 @@ PRIVATE void partition(int device, int style)
 	}
 }
 
-/*****************************************************************************
- *                                print_hdinfo
- *****************************************************************************/
-/**
- * <Ring 1> Print disk info.
- * 
- * @param hdi  Ptr to struct hd_info.
- *****************************************************************************/
-PRIVATE void print_hdinfo(struct hd_info * hdi)
-{
-	int i;
-	for (i = 0; i < NR_PART_PER_DRIVE + 1; i++) {
-		printl("%sPART_%d: base %d(0x%x), size %d(0x%x) (in sector)\n",
-		       i == 0 ? " " : "     ",
-		       i,
-		       hdi->primary[i].base,
-		       hdi->primary[i].base,
-		       hdi->primary[i].size,
-		       hdi->primary[i].size);
-	}
-	for (i = 0; i < NR_SUB_PER_DRIVE; i++) {
-		if (hdi->logical[i].size == 0)
-			continue;
-		printl("         "
-		       "%d: base %d(0x%x), size %d(0x%x) (in sector)\n",
-		       i,
-		       hdi->logical[i].base,
-		       hdi->logical[i].base,
-		       hdi->logical[i].size,
-		       hdi->logical[i].size);
-	}
-}
+/* /\***************************************************************************** */
+/*  *                                print_hdinfo */
+/*  *****************************************************************************\/ */
+/* /\** */
+/*  * <Ring 1> Print disk info. */
+/*  *  */
+/*  * @param hdi  Ptr to struct hd_info. */
+/*  *****************************************************************************\/ */
+/* PRIVATE void print_hdinfo(struct hd_info * hdi) */
+/* { */
+/* 	int i; */
+/* 	for (i = 0; i < NR_PART_PER_DRIVE + 1; i++) { */
+/* 		printl("{HD} %sPART_%d: base %d(0x%x), size %d(0x%x) (in sector)\n", */
+/* 		       i == 0 ? " " : "     ", */
+/* 		       i, */
+/* 		       hdi->primary[i].base, */
+/* 		       hdi->primary[i].base, */
+/* 		       hdi->primary[i].size, */
+/* 		       hdi->primary[i].size); */
+/* 	} */
+/* 	for (i = 0; i < NR_SUB_PER_DRIVE; i++) { */
+/* 		if (hdi->logical[i].size == 0) */
+/* 			continue; */
+/* 		printl("{HD}          " */
+/* 		       "%d: base %d(0x%x), size %d(0x%x) (in sector)\n", */
+/* 		       i, */
+/* 		       hdi->logical[i].base, */
+/* 		       hdi->logical[i].base, */
+/* 		       hdi->logical[i].size, */
+/* 		       hdi->logical[i].size); */
+/* 	} */
+/* } */
 
 /*****************************************************************************
  *                                hd_identify
@@ -300,19 +424,19 @@ PRIVATE void print_identify_info(u16* hdinfo)
 			s[i*2] = *p++;
 		}
 		s[i*2] = 0;
-		printl("%s: %s\n", iinfo[k].desc, s);
+		printl("{HD} %s: %s\n", iinfo[k].desc, s);
 	}
 
 	int capabilities = hdinfo[49];
-	printl("LBA supported: %s\n",
+	printl("{HD} LBA supported: %s\n",
 	       (capabilities & 0x0200) ? "Yes" : "No");
 
 	int cmd_set_supported = hdinfo[83];
-	printl("LBA48 supported: %s\n",
+	printl("{HD} LBA48 supported: %s\n",
 	       (cmd_set_supported & 0x0400) ? "Yes" : "No");
 
 	int sectors = ((int)hdinfo[61] << 16) + hdinfo[60];
-	printl("HD size: %dMB\n", sectors * 512 / 1000000);
+	printl("{HD} HD size: %dMB\n", sectors * 512 / 1000000);
 }
 
 /*****************************************************************************

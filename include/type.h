@@ -8,6 +8,9 @@
 #ifndef	_ORANGES_TYPE_H_
 #define	_ORANGES_TYPE_H_
 
+/* routine types */
+#define	PUBLIC		/* PUBLIC is the opposite of PRIVATE */
+#define	PRIVATE	static	/* PRIVATE x limits the scope of x */
 
 typedef	unsigned long long	u64;
 typedef	unsigned int		u32;
@@ -57,6 +60,12 @@ typedef struct {
 		struct mess3 m3;
 	} u;
 } MESSAGE;
+
+/* i have no idea of where to put this struct, so i put it here */
+struct boot_params {
+	int		mem_size;	/* memory size */
+	unsigned char *	kernel_file;	/* addr of kernel file */
+};
 
 
 #endif /* _ORANGES_TYPE_H_ */

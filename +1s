@@ -1,0 +1,7 @@
+sudo apt-get install gzip
+gunzip 80m.img.gz 
+sudo make image
+cd command
+sudo make install
+cd ..
+bochs -f bochsrc

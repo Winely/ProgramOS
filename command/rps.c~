@@ -1,0 +1,63 @@
+#include <stdio.h>
+
+
+int main(int argc, char * argv[])
+{
+	int random[25]={3,1,4,1,5,9,2,6,5,3,5,8,9,7,9,3,2,3,8,4,6,2,6,4,3};
+	char gamer;  // 玩家出拳
+	int computer;  // 电脑出拳
+	int result;  // 比赛结果
+	int time = 0;//第几次玩
+				 // 为了避免玩一次游戏就退出程序，可以将代码放在循环中
+	while (1) {
+		printf("\nThis is Jiandao-Shitou-Bu, please enter your choose: \n");
+		printf("J: JIAN DAO\nS: SHI TOU\nB: BU\nQ: Quit\n");
+		int argc2;
+		char* argv2[2];
+		scanWord(&argc2, argv2);
+		gamer=argv2[0][0];
+		switch (gamer) {
+		case 'j':case'J':
+			gamer = 4;
+			break;
+		case 's':case 'S':
+			gamer = 7;
+			break;
+		case 'b': case'B':
+			gamer = 10;
+			break;
+		case 'q': case'Q':
+			return 0;
+
+		default:
+			printf("Your choice %c is wrong,exit...\n", gamer);
+			scanWord(&argc2, argv2);
+			//clearScreen();
+			return 0;
+			break;
+		}
+
+		computer = random[time] % 3;  // 产生随机数并取余，得到电脑出拳
+		result = (int)gamer + computer;  // gamer 为 char 类型，数学运算时要强制转换类型
+		printf("The computer chooses ");
+		switch (computer)
+		{
+		case 0:printf("Scissors\n"); break; //4    1
+		case 1:printf("Rock\n"); break; //7  2
+		case 2:printf("paper\n"); break;   //10 3
+		}
+		printf("You choose ");
+		switch (gamer)
+		{
+		case 4:printf("scissors\n"); break;
+		case 7:printf("Rock\n"); break;
+		case 10:printf("paper\n"); break;
+		}
+		if (result == 6 || result == 7 || result == 11) printf("You win!\n");
+		else if (result == 5 || result == 9 || result == 10) printf("The computer win!\n");
+		else printf("Tie!\n");
+		//system("pause>nul&&cls");  // 暂停并清屏
+		if(++time == 25) time =0;
+	}
+	return 0;
+}

@@ -24,7 +24,8 @@ The program of operating system.
   $ bochs -f bochsrc
 ```
 + 然后输入回车和c即可。  
-+ 注意：请在make之前确认makefile无误，否则可能导致镜像文件a.img损坏。
++ 注意：请在make之前确认makefile无误，否则可能导致镜像文件a.img损坏。  
+
 ## 功能介绍
 + 计算器   
 + 万年历

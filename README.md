@@ -7,7 +7,7 @@ The program of operating system.
 + 在Terminal中完成项目的获取和配置  
 ```bash
   $ git clone https://github.com/Winely/ProgramOS.git  
-  $ cd ProgramOS/ProgramOS-master
+  $ cd ProgramOS
   $ sudo apt-get install gzip （若已安装gzip可跳过这行）
   $ gunzip 80m.img.gz
   $ sudo make image

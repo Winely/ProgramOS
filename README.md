@@ -8,18 +8,23 @@ The program of operating system.
 ```bash
   $ git clone https://github.com/Winely/ProgramOS.git  
   $ cd ProgramOS
-  $ sudo apt-get install gzip （若已安装gzip可跳过这行）
-  $ gunzip 80m.img.gz
-  $ sudo make image
 ```
-+ 假如是32位机器，需要将最外层`Makefile`和`command/Makefile`中的LD及gcc参数进行修改再进行make
++ 由于通过git直接传输.gz文件会导致格式损坏，所以我们将`80m.img.gz`改名为`.bin`文件强制使用二进制方式传输，以保证数据不受损。因此需要先改回`.gz`进行解压。
+```bash
+  $ mv 80m.img.bin 80m.img.gz
+  $ sudo apt-get install gzip   //若已安装gzip可跳过这行
+  $ gunzip 80m.img.gz
+```
++ 假如是32位机器，需要将最外层`Makefile`和`command/Makefile`中的LD及gcc参数进行修改（删除-m32和-m elf_i386参数）再进行make
 + bochs配置文件`bochsrc`中的`romimage`,`vgaromimage`和`keymap`的路径可能需要根据运行机器的bochs具体安装路径进行修改
 + 确定bochs配置无误后编译运行即可。
 ```bash
+  $ mkdir /mnt/floppy     //用于镜像软盘挂载。若该路径已存在可跳过。如果换为其他挂载点需要修改Makefile中的相关路径。
+  $ sudo make image
   $ bochs -f bochsrc
 ```
-  然后输入回车和c即可。  
-
++ 然后输入回车和c即可。  
++ 注意：请在make之前确认makefile无误，否则可能导致镜像文件a.img损坏。
 ## 功能介绍
 + 计算器   
 + 万年历
